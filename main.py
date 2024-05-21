@@ -4,6 +4,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 
 from tensorflow import data as tf_data
+from keras.src.utils import load_img, img_to_array
 from keras.src.optimizers.adam import Adam
 from keras.src.losses.losses import CategoricalCrossentropy, SparseCategoricalCrossentropy
 from keras.src.models import Sequential
@@ -17,17 +18,21 @@ BATCH_SIZE = 32
 IMG_HEIGHT = 180
 IMG_WIDTH = 180
 AUTOTUNE = tf.data.AUTOTUNE
-EPOCHS = 1
+EPOCHS = 25
 
-SAVE_PROGRESS = False
+SAVE_PROGRESS = True
 
-training_dataset_url = "C:\Fakultet\Semestar 6\Racunarska Inteligencija\Projekat\Data\Training"
-testing_dataset_url = "C:\Fakultet\Semestar 6\Racunarska Inteligencija\Projekat\Data\Testing"
+training_dataset_url = "C:\\Fakultet\\Semestar 6\\Racunarska Inteligencija\\Projekat\\Data\\Training"
+testing_dataset_url = "C:\\Fakultet\\Semestar 6\\Racunarska Inteligencija\\Projekat\\Data\\Testing"
 
-class_names = ['glioma_tumor',
-                'no_tumor',
-                'meningioma_tumor',
-                'pituitary_tumor']
+prediction_image_url = "C:\\Fakultet\\Semestar 6\\Racunarska Inteligencija\\Projekat\\glioma_test.jpeg"
+
+class_names = {
+    0: 'glioma_tumor',
+    1: 'meningioma_tumor',
+    2: 'no_tumor',
+    3: 'pituitary_tumor'
+}
 
 NUM_CLASSES = 4
 
@@ -61,19 +66,28 @@ def build_model():
 
 def train_and_evaluate():
 
-    train_dataset, val_dataset = image_dataset_from_directory(
+    train_dataset = image_dataset_from_directory(
         training_dataset_url,
-        validation_split=0.2,
-        subset='both',
+        label_mode='categorical',
         color_mode='grayscale',
         shuffle=True,
         seed=1337,
         image_size=(IMG_HEIGHT, IMG_WIDTH),
         batch_size=BATCH_SIZE
     )
+
+    val_dataset = image_dataset_from_directory(
+        testing_dataset_url,
+        label_mode='categorical',
+        color_mode='grayscale',
+        shuffle=True,
+        seed=1337,
+        image_size=(IMG_HEIGHT, IMG_WIDTH),
+        batch_size=BATCH_SIZE
+    )
+
     visualize_augmentation(train_dataset)
     visualize_data(train_dataset)
-
     train_dataset = train_dataset.map(lambda img, label: (data_augmentation(img), label),
                                       num_parallel_calls=tf_data.AUTOTUNE
                                       )
@@ -84,18 +98,17 @@ def train_and_evaluate():
     generated_model = build_model()
 
     generated_model.compile(optimizer=Adam(learning_rate=0.0001),
-                            loss=SparseCategoricalCrossentropy(from_logits=False),
+                            loss=CategoricalCrossentropy(from_logits=False),
                             metrics=['accuracy'])
 
     # early_stopping_callback = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
     # callbacks = [early_stopping_callback]
-    callbacks = []
-    if SAVE_PROGRESS:
-        checkpoint_callback = ModelCheckpoint(filepath='best_model.keras', save_best_only=True, monitor='val_loss', mode='min')
-        callbacks.append(checkpoint_callback)
+    # if SAVE_PROGRESS:
+    #     checkpoint_callback = ModelCheckpoint(filepath='best_model.keras', save_best_only=True, monitor='val_loss', mode='min')
+    #     callbacks.append(checkpoint_callback)
 
     generated_model.summary()
-
+    callbacks = []
     history = generated_model.fit(
             train_dataset,
             validation_data=val_dataset,
@@ -135,19 +148,27 @@ def plot_training_history(history):
 
 
 def evaluate_test_dataset(trained_model=None):
-    testing_dataset = image_dataset_from_directory(
-        testing_dataset_url,
+    img_to_predict = load_img(
+        prediction_image_url,
         color_mode='grayscale',
-        image_size=(IMG_HEIGHT, IMG_WIDTH),
-        batch_size=BATCH_SIZE
+        target_size=(IMG_HEIGHT, IMG_WIDTH),
     )
+    input_arr = img_to_array(img_to_predict)
+    input_arr = np.array([input_arr])
+
     if trained_model is None:
         trained_model = keras.src.models.model.saving_api.load_model('my_model.keras')
     # testing_dataset = testing_dataset.prefetch(buffer_size=AUTOTUNE)
-    predictions = trained_model.predict(testing_dataset)
+
+    # Need changing, should choose a picture than do a prediction on it
+    predictions = trained_model.predict(input_arr)
+
+    score = tf.nn.softmax(predictions[0])
+    print(
+        f"This image most likely belongs to {class_names[np.argmax(score)]} with a {100 * np.max(score):.2f} percent confidence.")
     print(predictions)
-    result = trained_model.evaluate(testing_dataset)
-    print(result)
+
+
 def filter_corrupted_images():
     num_skipped = 0
     for folder_name in (""):
@@ -177,7 +198,7 @@ def visualize_data(dataset):
         for i in range(9):
             ax = plt.subplot(3, 3, i + 1)
             plt.imshow(np.array(images[i]).astype("uint8"))
-            plt.title(int(labels[i]))
+            plt.title(class_names[np.argmax(labels[i])])
             plt.axis("off")
     plt.show()
 
@@ -186,5 +207,6 @@ if __name__ == "__main__":
     print("Hello World from my project!")
     print(tf.keras.__version__)
 
-    model = train_and_evaluate()
-    evaluate_test_dataset(model)
+    # model = train_and_evaluate()
+
+    evaluate_test_dataset()
