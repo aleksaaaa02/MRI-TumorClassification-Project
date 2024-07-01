@@ -1,32 +1,26 @@
-import keras
-import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
 from tensorflow import data as tf_data
 from keras.src.optimizers.adam import Adam
 from keras.src.losses.losses import CategoricalCrossentropy
-from keras.src.models import Sequential
-from keras.src.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from keras.src.layers import Dense, GlobalAveragePooling2D
+from keras.src.models import Model
 from keras.src.layers import RandomZoom, RandomBrightness, RandomFlip, RandomRotation
 from keras.src.utils.image_dataset_utils import image_dataset_from_directory
 from keras.src.callbacks import ModelCheckpoint, EarlyStopping
+from keras.src.applications.densenet import DenseNet169
 
 BATCH_SIZE = 32
-IMG_HEIGHT = 128
-IMG_WIDTH = 128
+IMG_HEIGHT = 64
+IMG_WIDTH = 64
 AUTOTUNE = tf.data.AUTOTUNE
-EPOCHS = 100
+EPOCHS = 50
 
 SAVE_PROGRESS = True
 
 saved_model_url = "../effnet.keras"
 training_dataset_url = "C:/Fakultet/Semestar 6/Racunarska Inteligencija/Projekat/Data/Training"
-testing_dataset_url = "C:/Fakultet/Semestar 6/Racunarska Inteligencija/Projekat/Data/Testing"
-
-prediction_image_url = "C:/Fakultet/Semestar 6/Racunarska Inteligencija/Projekat/no_tumor.png"
-
-labels = ['glioma_tumor', 'meningioma_tumor', 'no_tumor', 'pituitary_tumor']
 
 class_names = {
     0: 'glioma_tumor',
@@ -44,31 +38,16 @@ data_augmentation_layers = [
     RandomBrightness(factor=0.2)
 ]
 
+def use_pretrained_model_densenet():
+    base_model = DenseNet169(weights='imagenet', include_top=False, input_shape=(IMG_HEIGHT, IMG_WIDTH, 3))
 
-def build_model():
-    model = Sequential([
-        keras.Input(shape=(IMG_HEIGHT, IMG_WIDTH, 1)),
-        Conv2D(32, 3, padding='same', activation='relu'),
-        MaxPooling2D(),
-        Conv2D(64, 3, padding='same', activation='relu'),
-        MaxPooling2D(),
-        Conv2D(128, 3, padding='same', activation='relu'),
-        MaxPooling2D(),
-        Conv2D(256, 3, padding='same', activation='relu'),
-        MaxPooling2D(),
-        Conv2D(512, 3, padding='same', activation='relu'),
-        MaxPooling2D(),
-        Flatten(),
-        Dense(512, activation='relu'),
-        Dropout(0.2),
-        Dense(256, activation='relu'),
-        Dropout(0.2),
-        Dense(128, activation='relu'),
-        Dropout(0.4),
-        Dense(NUM_CLASSES, activation='softmax', name='outputs')
-    ])
+    x = base_model.output
+    x = GlobalAveragePooling2D()(x)
+    x = Dense(128, activation='relu')(x)
+    predictions = Dense(NUM_CLASSES, activation='softmax')(x)
+
+    model = Model(inputs=base_model.input, outputs=predictions)
     return model
-
 
 def train_and_evaluate():
     train_dataset, val_dataset = image_dataset_from_directory(
@@ -83,8 +62,6 @@ def train_and_evaluate():
         batch_size=BATCH_SIZE
     )
 
-    visualize_augmentation(train_dataset)
-    visualize_data(train_dataset)
     train_dataset = train_dataset.map(lambda img, label: (data_augmentation(img), label),
                                       num_parallel_calls=tf_data.AUTOTUNE
                                       )
@@ -93,7 +70,7 @@ def train_and_evaluate():
 
     # Creating a model
     # Change function call to select model
-    generated_model = build_model()
+    generated_model = use_pretrained_model_densenet()
 
     generated_model.compile(optimizer=Adam(0.0001),
                             loss=CategoricalCrossentropy(from_logits=False),
@@ -147,29 +124,7 @@ def data_augmentation(images):
     return images
 
 
-def visualize_augmentation(dataset):
-    plt.figure(figsize=(10, 10))
-    for images, _ in dataset.take(1):
-        for i in range(9):
-            augmented_images = data_augmentation(images)
-            ax = plt.subplot(3, 3, i + 1)
-            plt.imshow(np.array(augmented_images[i]).astype("uint8"), "gray")
-            plt.axis("off")
-    plt.show()
-
-
-def visualize_data(dataset):
-    plt.figure(figsize=(9, 9))
-    for images, labels in dataset.take(1):
-        for i in range(9):
-            ax = plt.subplot(3, 3, i + 1)
-            plt.imshow(np.array(images[i]).astype("uint8"), "gray")
-            plt.title(class_names[np.argmax(labels[i])])
-            plt.axis("off")
-    plt.show()
-
-
 if __name__ == "__main__":
     print(tf.keras.__version__)
+
     model = train_and_evaluate()
-    
